@@ -1,16 +1,28 @@
-# 🔐 ASP.NET Core Razor + API + JWT Cookie + YARP Reverse Proxy
+ได้เลย 😄 ผมรวม **doc1 + doc2** แล้วสรุปใหม่ให้เป็น **GitHub README** แบบอ่านง่าย เป็นระเบียบ และดู Professional พร้อมเอาไปวางใน `README.md` ได้ทันที ✅
+
+ด้านล่างคือเวอร์ชันที่ “จัดทรงแล้ว” 👇
+
+---
+
+# 🔐 ASP.NET Core Authentication System
+
+### Razor Pages + JWT Cookie + YARP Reverse Proxy
+
+ระบบ Authentication สำหรับสถาปัตยกรรมที่แยก **Web** และ **API** ออกจากกัน
+ใช้ JWT เก็บใน Cookie และเรียก API ผ่าน Reverse Proxy (YARP)
 
 ---
 
 ## 📌 Project Overview
 
-ระบบนี้ประกอบด้วย 2 โปรเจคหลัก
+ระบบประกอบด้วย 3 โปรเจคหลัก
 
-- 🌐 Web App (Razor Pages + YARP) → https://localhost:7290  
-- 🔧 API Backend (JWT Protected) → https://localhost:7060  
+* 🌐 **web_login** → หน้า Login (สร้าง JWT + เก็บ Cookie)
+* 🌐 **web_dashboard** → หน้า Dashboard (เรียก API ผ่าน YARP)
+* 🔧 **api_backend** → Web API (ตรวจสอบ JWT)
 
-Web App ใช้ **YARP Reverse Proxy** เพื่อเรียก API ผ่าน path `/api/*`  
-ทำให้ไม่ต้องใช้ CORS และสามารถส่ง Cookie (JWT) ได้โดยตรง
+> web_dashboard ใช้ **YARP Reverse Proxy** เรียก API ผ่าน path `/api/*`
+> ทำให้ไม่ต้องเปิด CORS และสามารถส่ง Cookie ได้โดยตรง
 
 ---
 
@@ -19,14 +31,14 @@ Web App ใช้ **YARP Reverse Proxy** เพื่อเรียก API ผ�
 ```
 Solution
 │
-├── web_login        → หน้า Login (สร้าง JWT + เก็บ Cookie)
-├── web_dashboard    → หน้า Dashboard (อ่าน JWT จาก Cookie)
-└── api_backend      → Web API (Validate JWT)
+├── web_login        → Login (สร้าง JWT + Cookie)
+├── web_dashboard    → Dashboard + Reverse Proxy
+└── api_backend      → Web API (JWT Validation)
 ```
 
 ---
 
-# 🏗 Architecture
+## 🧩 Architecture
 
 ```
 Browser
@@ -37,20 +49,30 @@ YARP Reverse Proxy
    ↓
 https://localhost:7060/WeatherForecast
    ↓
-JWT ตรวจสอบจาก Cookie (auth_token)
+JWT Validate from Cookie (auth_token)
 ```
 
 ---
 
-# 📦 Required Packages
+## 🔐 Authentication Strategy
 
-## Web Project (7290)
+* ใช้ JWT (HS256)
+* เก็บ JWT ใน HttpOnly Cookie ชื่อ `auth_token`
+* ใช้ `DateTime.UtcNow` สำหรับหมดอายุ Token
+* Validate ด้วย `JwtBearer`
+* ใช้ YARP แทนการเปิด CORS
+
+---
+
+## 📦 Required Packages
+
+### web_dashboard
 
 ```
 Microsoft.ReverseProxy
 ```
 
-## API Project (7060)
+### api_backend
 
 ```
 Microsoft.AspNetCore.Authentication.JwtBearer
@@ -58,25 +80,14 @@ Microsoft.AspNetCore.Authentication.JwtBearer
 
 ---
 
-# 🔐 Authentication Strategy
+## ⚙️ API Configuration (api_backend)
 
-- ใช้ JWT (HS256)
-- เก็บ JWT ใน HttpOnly Cookie ชื่อ `auth_token`
-- ใช้ `DateTime.UtcNow` สำหรับ Expire Token
-- Validate ผ่าน `JwtBearer`
-- ใช้ Reverse Proxy แทน CORS
-
----
-
-# ⚙️ API Configuration (7060)
-
-## Program.cs
+### Program.cs
 
 ```csharp
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
 {
-    // อ่าน JWT จาก Cookie
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
@@ -92,12 +103,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-
         ClockSkew = TimeSpan.Zero,
 
         ValidIssuer = "LoginWeb",
         ValidAudience = "DashboardWeb",
-
         IssuerSigningKey = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes("YOUR_SECRET_KEY"))
     };
@@ -109,25 +118,9 @@ app.UseAuthorization();
 
 ---
 
-## ตัวอย่าง API Endpoint
+## 🌐 Reverse Proxy Configuration (web_dashboard)
 
-```csharp
-[Authorize]
-[HttpGet("me")]
-public IActionResult Me()
-{
-    return Ok(new
-    {
-        Name = User.Identity?.Name
-    });
-}
-```
-
----
-
-# 🌐 Web Configuration (7290)
-
-## appsettings.json
+### appsettings.json
 
 ```json
 {
@@ -158,56 +151,7 @@ public IActionResult Me()
 
 ---
 
-## Program.cs (Web)
-
-```csharp
-builder.Services.AddRazorPages();
-
-builder.Services.AddReverseProxy()
-    .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
-
-var app = builder.Build();
-
-if (!app.Environment.IsDevelopment())
-{
-    app.UseExceptionHandler("/Error");
-    app.UseHsts(); // Production Security
-}
-
-app.UseHttpsRedirection();
-app.UseStaticFiles();
-app.UseRouting();
-
-app.MapRazorPages();
-app.MapReverseProxy();
-
-app.Run();
-```
-
----
-
-# 🧠 Frontend Fetch Example
-
-```javascript
-fetch('/api/WeatherForecast', {
-    method: 'GET',
-    credentials: 'include'
-})
-.then(res => {
-    if (res.status === 401) {
-        window.location.href = "/Error?type=expired";
-        return;
-    }
-    return res.json();
-})
-.then(data => {
-    console.log(data);
-});
-```
-
----
-
-# 🔐 JWT Creation (Login Example)
+## 🔑 JWT Creation (web_login)
 
 ```csharp
 var claims = new List<Claim>
@@ -244,7 +188,26 @@ Response.Cookies.Append("auth_token", tokenString, new CookieOptions
 
 ---
 
-# 🔓 Logout Implementation
+## 🌐 Frontend Call API Example
+
+```javascript
+fetch('/api/WeatherForecast', {
+    method: 'GET',
+    credentials: 'include'
+})
+.then(res => {
+    if (res.status === 401) {
+        window.location.href = "/Error?type=expired";
+        return;
+    }
+    return res.json();
+})
+.then(data => console.log(data));
+```
+
+---
+
+## 🔓 Logout
 
 ```csharp
 public IActionResult OnPostLogout()
@@ -260,32 +223,21 @@ public IActionResult OnPostLogout()
 
 ---
 
-# 🔄 Authentication Flow
+## 🔄 Authentication Flow
 
 1. User Login
-2. Web สร้าง JWT
-3. JWT ถูกเก็บใน HttpOnly Cookie ชื่อ `auth_token`
-4. Web เรียก `/api/*`
-5. YARP Forward ไป API
+2. web_login สร้าง JWT
+3. เก็บ JWT ใน Cookie
+4. web_dashboard เรียก `/api/*`
+5. YARP forward ไป API
 6. API อ่าน JWT จาก Cookie
 7. Validate Token
-8. ถ้า token หมดอายุ → 401
-9. Web redirect ไป `/Error?type=expired`
+8. ถ้า Token หมดอายุ → 401
+9. Web redirect ไปหน้า Error / Login
 
 ---
 
-# 🚀 Benefits of This Architecture
-
-✅ ไม่ต้องใช้ CORS  
-✅ Cookie ส่งได้ปกติ  
-✅ ซ่อน backend port  
-✅ ปลอดภัยกว่า localStorage  
-✅ รองรับ Scale และ Load Balancing  
-✅ Production Ready Pattern  
-
----
-
-# 🧪 Test Endpoint
+## 🧪 Test Endpoint
 
 ```
 GET https://localhost:7290/api/WeatherForecast
@@ -293,39 +245,54 @@ GET https://localhost:7290/api/WeatherForecast
 
 ---
 
-# 📌 Important Notes
+## 🔐 Security Notes
 
-- Cookie ต้องตั้งค่า:
-  - HttpOnly = true
-  - Secure = true
-  - SameSite = Strict (หรือ None ถ้าข้าม domain จริง)
-- JWT Secret ต้องเก็บใน Environment Variable ใน Production
-- ใช้ DateTime.UtcNow เสมอ
-- ตั้ง ClockSkew = TimeSpan.Zero เพื่อไม่เผื่อเวลา
+* Cookie ต้องเป็น:
 
----
-
-# 🏁 Run Order
-
-1. Start API (7060)
-2. Start Web (7290)
-3. Login เพื่อสร้าง Cookie
-4. เรียก API ผ่าน `/api/*`
+  * HttpOnly = true
+  * Secure = true
+  * SameSite = Strict
+* ห้าม hardcode Secret Key ใน Production
+* ใช้ HTTPS เท่านั้น
+* ใช้ `DateTime.UtcNow`
+* ตั้ง `ClockSkew = TimeSpan.Zero`
 
 ---
 
-# 📈 Future Improvements
+## 🏁 Run Order
 
-- Refresh Token
-- Role-based Authorization
-- Token Blacklist
-- Redis Session Store
-- Centralized Identity Server
-- Rate Limiting
-- Load Balancing
-- Health Checks
+1. Start api_backend (7060)
+2. Start web_dashboard (7290)
+3. Start web_login
+4. Login
+5. เรียก API ผ่าน `/api/*`
 
 ---
 
-🎉 ระบบนี้เป็น Razor + JWT Cookie + Reverse Proxy Pattern  
-ระดับ Production พร้อมต่อยอด Microservices ได้
+## 🚀 Benefits
+
+✅ ไม่ต้องใช้ CORS
+✅ Cookie ปลอดภัยกว่า localStorage
+✅ ซ่อน backend port
+✅ รองรับ Scale
+✅ Production-ready
+✅ ต่อ Microservices ได้ง่าย
+
+---
+
+## 📈 Future Improvements
+
+* Refresh Token
+* Role-based Authorization
+* Token Blacklist
+* Redis Session Store
+* Centralized Identity Server
+* Rate Limiting
+* Load Balancing
+* Health Checks
+
+---
+
+🎉 **Pattern นี้เหมาะกับระบบ Web + API ที่ต้องการความปลอดภัยสูง และรองรับ Production**
+
+---
