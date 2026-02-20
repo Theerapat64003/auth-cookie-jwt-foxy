@@ -1,0 +1,70 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home page";
+}
+
+<div class="text-center">
+    <h1 class="display-4">Weather Forecast</h1>
+    <h3>สวัสดี @User.FindFirst("Username")?.Value</h3>
+    <button id="btnLoad" class="btn btn-primary">
+        Load Weather
+    </button>
+
+    <div id="result" class="mt-3"></div>
+</div>
+
+@section Scripts {
+    <script>
+        document.getElementById("btnLoad").addEventListener("click", function () {
+
+            
+            fetch('/api/WeatherForecast', {
+                method: 'GET',
+                credentials: 'include'   // <--- สำคัญมาก
+                
+            })
+            .then(async res => {
+
+                if (res.status === 401) {
+                    window.location.href = "/Error?type=expired";
+                    return;
+                }else if (res.status !=== 200) {
+                    window.location.href = "/Error?type=orter";
+                    return;
+                }
+
+                if (!res.ok) {
+                    throw new Error("API Error: " + res.status);
+                }
+
+                return res.json();
+            })
+            .then(data => {
+
+                if (!data) return;
+
+                let html = "<table class='table table-bordered'>";
+                html += "<tr><th>Date</th><th>Temp C</th><th>Temp F</th><th>Summary</th></tr>";
+
+                data.forEach(item => {
+                    html += `<tr>
+                        <td>${item.date}</td>
+                        <td>${item.temperatureC}</td>
+                        <td>${item.temperatureF}</td>
+                        <td>${item.summary}</td>
+                    </tr>`;
+                });
+
+                html += "</table>";
+
+                document.getElementById("result").innerHTML = html;
+            })
+            .catch(err => {
+                console.error(err);
+            });
+
+        });
+    </script>
+}
+

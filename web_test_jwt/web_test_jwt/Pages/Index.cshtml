@@ -1,0 +1,52 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home page";
+}
+
+@* <div class="text-center">
+    <h1 class="display-4">Welcome</h1>
+    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+</div> *@
+
+
+<div class="container mt-5">
+    <h2>Login</h2>
+
+    @if (null != Model.LoginStatus)
+    {
+        if (Model.LoginStatus == false)
+        {
+            <div class="alert alert-danger">
+                @Model.Message
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-success">
+                @Model.Message
+            </div>
+        }
+
+    }
+
+   
+
+    <form method="post" asp-page-handler="Login">
+        <div class="mb-3">
+            <label>Username</label>
+            <input asp-for="Username" class="form-control" />
+        </div>
+
+        <div class="mb-3">
+            <label>Password</label>
+            <input asp-for="Password" type="password" class="form-control" />
+        </div>
+
+        <button type="submit" class="btn btn-primary">Login</button>
+    </form>
+    </br>
+    <form method="post" asp-page-handler="Logout">
+        <button class="btn btn-danger">Logout</button>
+    </form>
+</div>
