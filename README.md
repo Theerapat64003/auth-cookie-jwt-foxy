@@ -1,6 +1,16 @@
-# 🔐 Authentication System (Web + API)
+# 🔐 ASP.NET Core Razor + API + JWT Cookie + YARP Reverse Proxy
 
-ระบบ Authentication แบบ JWT สำหรับโครงสร้างแยก Web และ API
+---
+
+## 📌 Project Overview
+
+ระบบนี้ประกอบด้วย 2 โปรเจคหลัก
+
+- 🌐 Web App (Razor Pages + YARP) → https://localhost:7290  
+- 🔧 API Backend (JWT Protected) → https://localhost:7060  
+
+Web App ใช้ **YARP Reverse Proxy** เพื่อเรียก API ผ่าน path `/api/*`  
+ทำให้ไม่ต้องใช้ CORS และสามารถส่ง Cookie (JWT) ได้โดยตรง
 
 ---
 
@@ -16,34 +26,188 @@ Solution
 
 ---
 
-## 🧩 Architecture Flow
+# 🏗 Architecture
 
-1. ผู้ใช้ Login ผ่าน `web_login`
-2. `web_login` สร้าง JWT Token
-3. เก็บ Token ลงใน Cookie (HttpOnly)
-4. ผู้ใช้เข้า `web_dashboard`
-5. `web_dashboard` ส่ง JWT ไปที่ `api_backend`
-6. `api_backend` ตรวจสอบ Token
-7. คืนข้อมูลกลับ
-
----
-
-## 🔑 Authentication Strategy
-
-- ใช้ JWT (Json Web Token)
-- ใช้ ClaimTypes.Name สำหรับเก็บ Username
-- ใช้ DateTime.UtcNow สำหรับ Expire Token
-- Validate ด้วย JwtBearer
+```
+Browser
+   ↓
+https://localhost:7290/api/WeatherForecast
+   ↓
+YARP Reverse Proxy
+   ↓
+https://localhost:7060/WeatherForecast
+   ↓
+JWT ตรวจสอบจาก Cookie (auth_token)
+```
 
 ---
 
-# ⚙️ Configuration
+# 📦 Required Packages
+
+## Web Project (7290)
+
+```
+Microsoft.ReverseProxy
+```
+
+## API Project (7060)
+
+```
+Microsoft.AspNetCore.Authentication.JwtBearer
+```
 
 ---
 
-## 📌 1️⃣ web_login
+# 🔐 Authentication Strategy
 
-### สร้าง JWT
+- ใช้ JWT (HS256)
+- เก็บ JWT ใน HttpOnly Cookie ชื่อ `auth_token`
+- ใช้ `DateTime.UtcNow` สำหรับ Expire Token
+- Validate ผ่าน `JwtBearer`
+- ใช้ Reverse Proxy แทน CORS
+
+---
+
+# ⚙️ API Configuration (7060)
+
+## Program.cs
+
+```csharp
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+.AddJwtBearer(options =>
+{
+    // อ่าน JWT จาก Cookie
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            context.Token = context.Request.Cookies["auth_token"];
+            return Task.CompletedTask;
+        }
+    };
+
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+
+        ClockSkew = TimeSpan.Zero,
+
+        ValidIssuer = "LoginWeb",
+        ValidAudience = "DashboardWeb",
+
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes("YOUR_SECRET_KEY"))
+    };
+});
+
+app.UseAuthentication();
+app.UseAuthorization();
+```
+
+---
+
+## ตัวอย่าง API Endpoint
+
+```csharp
+[Authorize]
+[HttpGet("me")]
+public IActionResult Me()
+{
+    return Ok(new
+    {
+        Name = User.Identity?.Name
+    });
+}
+```
+
+---
+
+# 🌐 Web Configuration (7290)
+
+## appsettings.json
+
+```json
+{
+  "ReverseProxy": {
+    "Routes": {
+      "apiRoute": {
+        "ClusterId": "apiCluster",
+        "Match": {
+          "Path": "/api/{**catch-all}"
+        },
+        "Transforms": [
+          { "PathRemovePrefix": "/api" }
+        ]
+      }
+    },
+    "Clusters": {
+      "apiCluster": {
+        "Destinations": {
+          "destination1": {
+            "Address": "https://localhost:7060/"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
+## Program.cs (Web)
+
+```csharp
+builder.Services.AddRazorPages();
+
+builder.Services.AddReverseProxy()
+    .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
+
+var app = builder.Build();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Error");
+    app.UseHsts(); // Production Security
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+
+app.MapRazorPages();
+app.MapReverseProxy();
+
+app.Run();
+```
+
+---
+
+# 🧠 Frontend Fetch Example
+
+```javascript
+fetch('/api/WeatherForecast', {
+    method: 'GET',
+    credentials: 'include'
+})
+.then(res => {
+    if (res.status === 401) {
+        window.location.href = "/Error?type=expired";
+        return;
+    }
+    return res.json();
+})
+.then(data => {
+    console.log(data);
+});
+```
+
+---
+
+# 🔐 JWT Creation (Login Example)
 
 ```csharp
 var claims = new List<Claim>
@@ -66,119 +230,102 @@ var token = new JwtSecurityToken(
     signingCredentials: creds
 );
 
-var tokenString = new JwtSecurityTokenHandler()
-    .WriteToken(token);
-```
+var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
 
-### เก็บลง Cookie
-
-```csharp
-Response.Cookies.Append("AuthToken", tokenString, new CookieOptions
+Response.Cookies.Append("auth_token", tokenString, new CookieOptions
 {
     HttpOnly = true,
     Secure = true,
     SameSite = SameSiteMode.Strict,
+    Path = "/",
     Expires = DateTime.UtcNow.AddMinutes(15)
 });
 ```
 
 ---
 
-## 📌 2️⃣ web_dashboard
-
-### อ่านชื่อจาก Claim ใน Controller
+# 🔓 Logout Implementation
 
 ```csharp
-var name = User.Identity?.Name;
-```
-
-### แสดงใน Razor
-
-```html
-<h3>Welcome @User.Identity?.Name</h3>
-```
-
----
-
-## 📌 3️⃣ api_backend
-
-### เปิดใช้ JWT Authentication
-
-```csharp
-builder.Services.AddAuthentication("Bearer")
-    .AddJwtBearer("Bearer", options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-
-            ValidIssuer = "LoginWeb",
-            ValidAudience = "DashboardWeb",
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes("YOUR_SECRET_KEY"))
-        };
-
-        options.ClockSkew = TimeSpan.Zero;
-    });
-
-app.UseAuthentication();
-app.UseAuthorization();
-```
-
-### ตัวอย่าง API
-
-```csharp
-[Authorize]
-[HttpGet("me")]
-public IActionResult Me()
+public IActionResult OnPostLogout()
 {
-    return Ok(new
+    Response.Cookies.Delete("auth_token", new CookieOptions
     {
-        Name = User.Identity?.Name
+        Path = "/"
     });
+
+    return RedirectToPage("/Login");
 }
 ```
 
 ---
 
-# 🕒 Why Use DateTime.UtcNow ?
+# 🔄 Authentication Flow
 
-JWT มาตรฐานใช้เวลาแบบ UTC  
-เพื่อป้องกันปัญหา Timezone mismatch ระหว่าง Server หลายประเทศ
-
-กฎทอง:
-- Server ทำงานด้วย UTC
-- เวลาแสดงผล ค่อยแปลงเป็น Local Time
-
----
-
-# 🚀 Run Project
-
-1. รัน api_backend
-2. รัน web_login
-3. Login
-4. เข้า web_dashboard
-5. Dashboard เรียก API พร้อม JWT
+1. User Login
+2. Web สร้าง JWT
+3. JWT ถูกเก็บใน HttpOnly Cookie ชื่อ `auth_token`
+4. Web เรียก `/api/*`
+5. YARP Forward ไป API
+6. API อ่าน JWT จาก Cookie
+7. Validate Token
+8. ถ้า token หมดอายุ → 401
+9. Web redirect ไป `/Error?type=expired`
 
 ---
 
-# 🔐 Security Notes
+# 🚀 Benefits of This Architecture
 
-- เก็บ Secret Key ใน appsettings.json
-- ห้าม hardcode Key ใน Production
-- ใช้ HTTPS เสมอ
-- ตั้ง ClockSkew = TimeSpan.Zero ถ้าต้องการหมดอายุตรงเวลา
+✅ ไม่ต้องใช้ CORS  
+✅ Cookie ส่งได้ปกติ  
+✅ ซ่อน backend port  
+✅ ปลอดภัยกว่า localStorage  
+✅ รองรับ Scale และ Load Balancing  
+✅ Production Ready Pattern  
 
 ---
 
-# 📌 Future Improvements
+# 🧪 Test Endpoint
+
+```
+GET https://localhost:7290/api/WeatherForecast
+```
+
+---
+
+# 📌 Important Notes
+
+- Cookie ต้องตั้งค่า:
+  - HttpOnly = true
+  - Secure = true
+  - SameSite = Strict (หรือ None ถ้าข้าม domain จริง)
+- JWT Secret ต้องเก็บใน Environment Variable ใน Production
+- ใช้ DateTime.UtcNow เสมอ
+- ตั้ง ClockSkew = TimeSpan.Zero เพื่อไม่เผื่อเวลา
+
+---
+
+# 🏁 Run Order
+
+1. Start API (7060)
+2. Start Web (7290)
+3. Login เพื่อสร้าง Cookie
+4. เรียก API ผ่าน `/api/*`
+
+---
+
+# 📈 Future Improvements
 
 - Refresh Token
 - Role-based Authorization
 - Token Blacklist
 - Redis Session Store
-- Reverse Proxy (YARP)
 - Centralized Identity Server
+- Rate Limiting
+- Load Balancing
+- Health Checks
+
+---
+
+🎉 ระบบนี้เป็น Razor + JWT Cookie + Reverse Proxy Pattern  
+ระดับ Production พร้อมต่อยอด Microservices ได้
