@@ -1,9 +1,3 @@
-ได้เลย 😄 ผมรวม **doc1 + doc2** แล้วสรุปใหม่ให้เป็น **GitHub README** แบบอ่านง่าย เป็นระเบียบ และดู Professional พร้อมเอาไปวางใน `README.md` ได้ทันที ✅
-
-ด้านล่างคือเวอร์ชันที่ “จัดทรงแล้ว” 👇
-
----
-
 # 🔐 ASP.NET Core Authentication System
 
 ### Razor Pages + JWT Cookie + YARP Reverse Proxy
